@@ -5,12 +5,6 @@ class Flex(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name='register')
-    async def register(self, ctx):
-        """Register your NFT for the next tournament."""
-        # Placeholder for actual registration logic
-        await ctx.send(f"📝 **{ctx.author.display_name}** has registered for the next tournament!")
-
     @commands.hybrid_command(name='game_flex')
     async def game_flex(self, ctx):
         """Show off your battle statistics."""

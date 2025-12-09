@@ -15,7 +15,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(command_prefix='/', intents=intents)
+bot = commands.Bot(command_prefix='/', intents=intents, help_command=None)
 
 # --- Webhook Server ---
 async def handle_webhook(request):
@@ -62,6 +62,8 @@ async def load_extensions():
     await bot.load_extension('commands.battle')
     await bot.load_extension('commands.flex')
     await bot.load_extension('commands.betting')
+    await bot.load_extension('commands.admin')
+    await bot.load_extension('commands.help')
 
 
 async def main():

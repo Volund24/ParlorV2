@@ -2,9 +2,10 @@ import discord
 from discord.ext import commands
 from discord.ui import View, Select, Button
 from engine.fairness import FairnessEngine
-from integrations.nvidia_narrator import NvidiaNarrator # Switched to NvidiaNarrator
+from integrations.nvidia_narrator import NvidiaNarrator
 from integrations.nvidia_image_generator import NvidiaImageGenerator
 from integrations.nvidia_vision import NvidiaVision
+from commands.admin import Admin # Import Admin to access config
 import asyncio
 import io
 import random
@@ -18,125 +19,28 @@ COLLECTION_STYLE = (
     "graphic novel style, highly detailed"
 )
 
-class BattleSetupView(View):
-    def __init__(self, ctx, opponent, battle_cog):
-        super().__init__(timeout=60)
-        self.ctx = ctx
-        self.opponent = opponent
-        self.battle_cog = battle_cog
-        self.selected_arena = "Cyberpunk Alleyway"
-        self.selected_gender = "They/Them"
-        
-        # Arena Select
-        self.arena_select = Select(
-            placeholder="Choose an Arena...",
-            options=[
-                discord.SelectOption(label="Cyberpunk Alleyway", description="Neon lights and rain"),
-                discord.SelectOption(label="Medieval Colosseum", description="Sand and stone"),
-                discord.SelectOption(label="Space Station", description="Zero gravity and stars"),
-                discord.SelectOption(label="Haunted Forest", description="Mist and shadows"),
-                discord.SelectOption(label="Volcanic Crater", description="Lava and ash"),
-            ]
-        )
-        self.arena_select.callback = self.arena_callback
-        self.add_item(self.arena_select)
-
-        
-        # Creature Select (Replaced with NFT/PFP Select)
-        self.creature_select = Select(
-            placeholder="Select Your Fighter's Avatar...",
-            options=[
-                discord.SelectOption(label="The Growerz", description="Cannabis culture avatar"),
-                discord.SelectOption(label="Gainz", description="Fitness & muscle avatar"),
-                discord.SelectOption(label="MNK3YS", description="Pixelated monkey avatar"),
-                discord.SelectOption(label="Stoned Ape Crew", description="Chilled out ape"),
-                discord.SelectOption(label="Bored Ape", description="Classic BAYC style"),
-                discord.SelectOption(label="CryptoPunk", description="OG Pixel art"),
-                discord.SelectOption(label="Custom PFP", description="Use your current profile picture"),
-            ]
-        )
-        self.creature_select.callback = self.creature_callback
-        self.add_item(self.creature_select)
-
-        # Start Button
-        self.start_button = Button(label="⚔️ Start Battle", style=discord.ButtonStyle.danger)
-        self.start_button.callback = self.start_callback
-        self.add_item(self.start_button)
-
-    async def arena_callback(self, interaction: discord.Interaction):
-        if interaction.user != self.ctx.author:
-            return await interaction.response.send_message("Not your battle!", ephemeral=True)
-        self.selected_arena = self.arena_select.values[0]
-        await interaction.response.defer()
-
-    async def creature_callback(self, interaction: discord.Interaction):
-        if interaction.user != self.ctx.author:
-            return await interaction.response.send_message("Not your battle!", ephemeral=True)
-        self.selected_gender = self.creature_select.values[0] # Reusing variable name for minimal refactor
-        await interaction.response.defer()
-
-    async def start_callback(self, interaction: discord.Interaction):
-        if interaction.user != self.ctx.author:
-            return await interaction.response.send_message("Not your battle!", ephemeral=True)
-        
-        try:
-            # Determine Avatar URL
-            avatar_url = None
-            if self.selected_gender == "Custom PFP":
-                avatar_url = self.ctx.author.display_avatar.url
-
-            # Update message to show loading state
-            await interaction.response.edit_message(content=f"⚔️ **Battle Starting!**\n📍 Arena: {self.selected_arena}\n🧬 Avatar: {self.selected_gender}\n\n🔄 **Initializing Battle Engine...**", view=None)
-            
-            # Trigger the actual battle logic, passing the interaction for updates
-            await self.battle_cog.run_battle(self.ctx, self.opponent, self.selected_arena, self.selected_gender, interaction, avatar_url=avatar_url)
-        except Exception as e:
-            print(f"Start Battle Error: {e}")
-            import traceback
-            traceback.print_exc()
-            # Try to send a message if interaction is still valid
-            try:
-                await interaction.followup.send(f"❌ Failed to start battle: {e}", ephemeral=True)
-            except:
-                pass
-
-
-        # Start Button
-        self.start_button = Button(label="⚔️ Start Battle", style=discord.ButtonStyle.danger)
-        self.start_button.callback = self.start_callback
-        self.add_item(self.start_button)
-
-    async def arena_callback(self, interaction: discord.Interaction):
-        if interaction.user != self.ctx.author:
-            return await interaction.response.send_message("Not your battle!", ephemeral=True)
-        self.selected_arena = self.arena_select.values[0]
-        await interaction.response.defer()
-
-    async def creature_callback(self, interaction: discord.Interaction):
-        if interaction.user != self.ctx.author:
-            return await interaction.response.send_message("Not your battle!", ephemeral=True)
-        self.selected_gender = self.creature_select.values[0] # Reusing variable name for minimal refactor
-        await interaction.response.defer()
-
-    async def start_callback(self, interaction: discord.Interaction):
-        if interaction.user != self.ctx.author:
-            return await interaction.response.send_message("Not your battle!", ephemeral=True)
-        
-        # Update message to show loading state
-        await interaction.response.edit_message(content=f"⚔️ **Battle Starting!**\n📍 Arena: {self.selected_arena}\n🧬 Species: {self.selected_gender}\n\n🔄 **Initializing Battle Engine...**", view=None)
-        
-        # Trigger the actual battle logic, passing the interaction for updates
-        await self.battle_cog.run_battle(self.ctx, self.opponent, self.selected_arena, self.selected_gender, interaction)
+# Random Action Verbs for variety
+ACTION_VERBS = ["punching", "kicking", "blasting", "slamming", "dodging", "striking", "grappling"]
 
 class Battle(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.fairness = FairnessEngine()
-        self.narrator = NvidiaNarrator() # Switched to Nvidia
+        self.narrator = NvidiaNarrator()
         self.nvidia_artist = NvidiaImageGenerator()
         self.vision = NvidiaVision()
-        # Supermachine is injected into bot in main.py
         self.supermachine = getattr(bot, 'supermachine', None)
+        
+        # Tournament Queue
+        self.queue = []
+        self.tournament_active = False
+
+    def get_config(self):
+        # Helper to get admin config
+        admin_cog = self.bot.get_cog("Admin")
+        if admin_cog:
+            return admin_cog.config
+        return {"tournament_size": 2, "theme": "Cyberpunk Alleyway"}
 
     async def generate_image_hybrid(self, prompt, prefer_nvidia=False, control_image_url=None):
         """
@@ -168,55 +72,85 @@ class Battle(commands.Cog):
         img = await self.nvidia_artist.generate_image(prompt) # This method already has Pollinations logic inside
         return img
 
-    @commands.hybrid_command(name='battle')
-    async def battle(self, ctx, opponent: discord.Member = None):
-        """Start a battle against another user. If no opponent is specified, one will be chosen at random."""
-        
-        if not opponent:
-            potential_opponents = [m for m in ctx.guild.members if not m.bot and m.id != ctx.author.id]
-            if not potential_opponents:
-                await ctx.send("There's no one else here to fight! Invite some friends.")
-                return
-            opponent = random.choice(potential_opponents)
-            await ctx.send(f"🎲 **{ctx.author.display_name}** didn't pick a fight, so the arena chose **{opponent.display_name}**!")
-
-        if opponent.id == ctx.author.id:
-            await ctx.send("You can't fight yourself!")
+    @commands.hybrid_command(name='register')
+    async def register(self, ctx):
+        """Join the queue for the next battle/tournament."""
+        if self.tournament_active:
+            await ctx.send("⚠️ A tournament is currently in progress. Please wait for the next round.")
             return
 
-        # Send the Setup View
-        view = BattleSetupView(ctx, opponent, self)
-        await ctx.send(f"⚔️ **{ctx.author.display_name}** vs **{opponent.display_name}**\nConfigure your battle:", view=view)
+        if ctx.author in self.queue:
+            await ctx.send("You are already in the queue!")
+            return
 
-    async def run_battle(self, ctx, opponent, theme, player_gender, interaction=None, avatar_url=None):
-        player_a = ctx.author
-        player_b = opponent
+        self.queue.append(ctx.author)
         
-        # Helper to update status
-        async def update_status(text):
-            if interaction:
-                try:
-                    await interaction.edit_original_response(content=f"⚔️ **Battle in Progress**\n📍 Arena: {theme}\n\n{text}")
-                except:
-                    pass # Ignore if message deleted or too old
+        config = self.get_config()
+        required_players = config.get("tournament_size", 2)
+        
+        # Build the list of registered users
+        player_list = "\n".join([f"{i+1}. {p.display_name}" for i, p in enumerate(self.queue)])
+        
+        embed = discord.Embed(title="📝 Tournament Registration", color=discord.Color.green())
+        embed.add_field(name="System Message", value="User has registered for next battle.", inline=False)
+        embed.add_field(name=f"Registered Users ({len(self.queue)}/{required_players})", value=player_list if player_list else "None", inline=False)
+        embed.set_footer(text=f"Battle will autostart once {required_players} players register.")
+        
+        await ctx.send(embed=embed)
+        
+        # Check if we can start
+        if len(self.queue) >= required_players:
+            await self.start_tournament(ctx)
 
-        # Default opponent gender to unknown/they
-        opponent_gender = "They/Them" 
+    @commands.hybrid_command(name='battle')
+    async def battle(self, ctx):
+        """(Legacy) Register for the battle queue."""
+        await self.register(ctx)
+
+    async def start_tournament(self, ctx):
+        self.tournament_active = True
+        config = self.get_config()
+        required_players = config.get("tournament_size", 2)
+        
+        await ctx.send(f"🚨 **TOURNAMENT STARTING!** 🚨\n{len(self.queue)} fighters have entered the arena!")
+        
+        # For now, we just take the first 2 players for a 1v1 if size is 2
+        # If size > 2, we would need a bracket loop. 
+        # Implementing a simple loop for now.
+        
+        while len(self.queue) >= 2:
+            player_a = self.queue.pop(0)
+            player_b = self.queue.pop(0)
+            
+            await ctx.send(f"⚔️ **Match Up:** {player_a.mention} vs {player_b.mention}")
+            await self.run_battle(ctx, player_a, player_b)
+            
+            # Small delay between matches
+            await asyncio.sleep(5)
+            
+        self.tournament_active = False
+        if self.queue:
+            await ctx.send(f"ℹ️ {len(self.queue)} player(s) remaining in queue waiting for opponents.")
+
+    async def run_battle(self, ctx, player_a, player_b):
+        config = self.get_config()
+        theme = config.get("theme", "Cyberpunk Alleyway")
+        
+        # Helper to update status (we'll send a new message since we don't have an interaction object from a button click)
+        status_msg = await ctx.send(f"⚔️ **Initializing Match:** {player_a.display_name} vs {player_b.display_name}...")
+        
+        async def update_status(text):
+            try:
+                await status_msg.edit(content=f"⚔️ **Battle in Progress**\n📍 Arena: {theme}\n\n{text}")
+            except:
+                pass
 
         # 1. Calculate Winner (Fairness Engine)
         winner = self.fairness.determine_winner(player_a, player_b)
+        loser = player_b if winner == player_a else player_a
         
         # 2. Generate Narrative & Art (Parallel)
-        # theme is passed from view
         
-        intro_text = f"**{player_a.display_name}** vs **{player_b.display_name}**!"
-        action_text = "BAM! POW!"
-        victory_text = f"**{winner.display_name}** wins!"
-        
-        meeting_image_data = None
-        clash_image_data = None
-        victory_image_data = None
-
         try:
             # Create tasks for parallel execution
             print("Starting AI Generation...")
@@ -225,55 +159,45 @@ class Battle(commands.Cog):
             # Step 2a: Analyze Avatars (Vision)
             print("Analyzing Avatars...")
             desc_a_task = self.vision.describe_avatar(player_a.display_avatar.url)
-            desc_b_task = self.vision.describe_avatar(opponent.display_avatar.url)
+            desc_b_task = self.vision.describe_avatar(player_b.display_avatar.url)
             
             desc_a, desc_b = await asyncio.gather(desc_a_task, desc_b_task)
-            print(f"Avatar A: {desc_a}")
-            print(f"Avatar B: {desc_b}")
 
             await update_status("✍️ **Writing the Legend...** (Generating Story)")
 
             # Step 2b: Generate Text (Narrator)
-            # Using Gemini Narrator for more variety
-            loser = player_b if winner == player_a else player_a
-            winner_species = player_gender if winner == player_a else opponent_gender
-            loser_species = opponent_gender if winner == player_a else player_gender
-            
             # --- PARALLEL GENERATION START ---
             await update_status("🚀 **Launching Battle...** (Generating All Scenes)")
             
-            # 1. Define Prompts
+            # 1. Define Prompts (Randomized)
+            action_verb = random.choice(ACTION_VERBS)
+            
             meeting_prompt = (
-                f"A comic book panel of ({desc_a}, {player_gender}) and ({desc_b}) staring each other down "
+                f"A comic book panel of ({desc_a}) and ({desc_b}) staring each other down "
                 f"in a {theme}, tense atmosphere, split screen composition. {COLLECTION_STYLE}"
             )
             clash_prompt = (
-                f"A dynamic comic book panel of ({desc_a}, {player_gender}) fighting ({desc_b}) "
+                f"A dynamic comic book panel of ({desc_a}) {action_verb} ({desc_b}) "
                 f"in a {theme}, action lines, impact frames, explosion background. {COLLECTION_STYLE}"
             )
+            # Explicitly state winner standing over loser
             victory_prompt = (
-                f"A comic book panel of ({desc_a if winner == player_a else desc_b}, {winner_species}) standing victorious over "
-                f"({desc_b if winner == player_a else desc_a}), triumphant pose, "
+                f"A comic book panel of ({desc_a if winner == player_a else desc_b}) standing victorious over "
+                f"a defeated ({desc_b if winner == player_a else desc_a}) lying on the ground, triumphant pose, "
                 f"in a {theme}. {COLLECTION_STYLE}"
             )
 
             # 2. Create Tasks
-            # Text Tasks (Keep these parallel as they are fast)
-            task_text_meeting = asyncio.create_task(self.narrator.generate_meeting(player_a.display_name, player_b.display_name, theme, player_gender, opponent_gender))
-            task_text_clash = asyncio.create_task(self.narrator.generate_clash(player_a.display_name, player_b.display_name, player_gender, opponent_gender))
-            task_text_victory = asyncio.create_task(self.narrator.generate_victory(winner.display_name, loser.display_name, winner_species, loser_species))
-            
-            # Image Tasks - SEQUENTIAL to avoid timeouts/rate limits
-            # Scene 1: Supermachine (First priority)
-            # task_img_meeting = asyncio.create_task(self.generate_image_hybrid(meeting_prompt, prefer_nvidia=False))
+            task_text_meeting = asyncio.create_task(self.narrator.generate_meeting(player_a.display_name, player_b.display_name, theme))
+            task_text_clash = asyncio.create_task(self.narrator.generate_clash(player_a.display_name, player_b.display_name))
+            task_text_victory = asyncio.create_task(self.narrator.generate_victory(winner.display_name, loser.display_name))
             
             # --- SCENE 1: THE MEETING ---
             await update_status("🎨 **Scene 1/3: The Meeting** (Processing...)")
             
             meeting_text = await task_text_meeting
-            # Generate Image 1 (Use Supermachine/Pollinations for consistency/uncensored)
-            # Use avatar_url if available (Player A is in the scene)
-            meeting_image_data = await self.generate_image_hybrid(meeting_prompt, prefer_nvidia=False, control_image_url=avatar_url)
+            # Use Player A's avatar as control for Scene 1
+            meeting_image_data = await self.generate_image_hybrid(meeting_prompt, prefer_nvidia=False, control_image_url=player_a.display_avatar.url)
             
             embed1 = discord.Embed(title="⚔️ THE BACKROOM PARLOR ⚔️", color=discord.Color.blue())
             embed1.add_field(name="👀 The Stare Down", value=f"*{meeting_text}*", inline=False)
@@ -285,13 +209,18 @@ class Battle(commands.Cog):
             
             await ctx.send(embed=embed1, file=file1)
             
+            # --- BETTING PHASE (Async Delay) ---
+            if config.get("betting_enabled", False):
+                await update_status("💰 **Betting Window Open!** (Place your bets now!)")
+                # Simulate betting window
+                await asyncio.sleep(10)
+
             # --- SCENE 2: THE CLASH ---
             await update_status("🎨 **Scene 2/3: The Clash** (Processing...)")
             
             clash_text = await task_text_clash
-            # Generate Image 2
-            # Use avatar_url if available
-            clash_image_data = await self.generate_image_hybrid(clash_prompt, prefer_nvidia=False, control_image_url=avatar_url)
+            # Use Player A's avatar as control for Scene 2 (or random?)
+            clash_image_data = await self.generate_image_hybrid(clash_prompt, prefer_nvidia=False, control_image_url=player_a.display_avatar.url)
             
             embed2 = discord.Embed(color=discord.Color.red())
             embed2.add_field(name="💥 The Clash", value=f"*{clash_text}*", inline=False)
@@ -307,10 +236,8 @@ class Battle(commands.Cog):
             await update_status("🎨 **Scene 3/3: The Victory** (Processing...)")
             
             victory_text = await task_text_victory
-            # Generate Image 3
-            # Only use avatar_url if Player A is the winner to avoid confusion
-            victory_control_url = avatar_url if (winner == player_a) else None
-            victory_image_data = await self.generate_image_hybrid(victory_prompt, prefer_nvidia=False, control_image_url=victory_control_url)
+            # Use WINNER's avatar as control for Scene 3
+            victory_image_data = await self.generate_image_hybrid(victory_prompt, prefer_nvidia=False, control_image_url=winner.display_avatar.url)
             
             embed3 = discord.Embed(color=discord.Color.gold())
             embed3.add_field(name="🏆 The Victor", value=f"**{winner.display_name}**\n\n*{victory_text}*", inline=False)
@@ -320,10 +247,7 @@ class Battle(commands.Cog):
                 file3 = discord.File(victory_image_data, filename="victory.jpg")
                 embed3.set_image(url="attachment://victory.jpg")
             
-            if winner == ctx.author:
-                embed3.set_thumbnail(url=ctx.author.display_avatar.url)
-            else:
-                embed3.set_thumbnail(url=opponent.display_avatar.url)
+            embed3.set_thumbnail(url=winner.display_avatar.url)
             
             await ctx.send(embed=embed3, file=file3)
             
