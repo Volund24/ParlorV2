@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  parlor-bot:
+    build: .
+    container_name: parlor-bot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data

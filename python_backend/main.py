@@ -2,13 +2,15 @@ import discord
 from discord.ext import commands
 from config import settings
 import asyncio
+import os
 from aiohttp import web
 from integrations.supermachine import SupermachineImageGenerator
 
 # Initialize Supermachine Generator (Global)
 supermachine_gen = SupermachineImageGenerator()
-# Set the Tunnel URL provided by the user
-supermachine_gen.set_webhook_url("https://rare-pots-leave.loca.lt")
+# Set the Webhook URL from environment variable or default to localtunnel
+webhook_url = os.getenv("WEBHOOK_URL", "https://rare-pots-leave.loca.lt")
+supermachine_gen.set_webhook_url(webhook_url)
 
 # Intent setup
 intents = discord.Intents.default()

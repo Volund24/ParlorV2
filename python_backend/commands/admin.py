@@ -220,11 +220,35 @@ class Admin(commands.Cog):
         latency = round(self.bot.latency * 1000)
         await ctx.send(f"💚 **System Healthy**\nLatency: {latency}ms\nDatabase: Connected")
 
-    @commands.hybrid_command(name="admin_kill", description="Emergency shutdown")
+    @commands.hybrid_command(name="admin_reset", description="Soft Reset: Clears tournament state without restarting bot")
+    @commands.has_permissions(administrator=True)
+    async def admin_reset(self, ctx):
+        """Resets the Battle Cog state (Queue, Active Tournament, etc)."""
+        battle_cog = self.bot.get_cog("Battle")
+        if not battle_cog:
+            return await ctx.send("❌ Battle module not loaded.")
+        
+        # Reset State
+        battle_cog.queue = []
+        battle_cog.tournament_active = False
+        battle_cog.current_match_id = None
+        battle_cog.tournament_mode = None
+        battle_cog.team_rosters = {'A': [], 'B': []}
+        battle_cog.team_names = {'A': 'Team A', 'B': 'Team B'}
+        
+        await ctx.send("🔄 **Tournament State Reset!**\nQueue cleared. Ready for new `/register`.")
+
+    @commands.hybrid_command(name="admin_restart", description="Hard Restart: Reboots the bot container")
+    @commands.has_permissions(administrator=True)
+    async def admin_restart(self, ctx):
+        """Kills the process. Docker will auto-restart it."""
+        await ctx.send("🛑 **Rebooting System...**\n(Bot will be back in ~10-20 seconds)")
+        await self.bot.close()
+
+    @commands.hybrid_command(name="admin_kill", description="Alias for admin_restart")
     @commands.has_permissions(administrator=True)
     async def admin_kill(self, ctx):
-        await ctx.send("🛑 **Emergency Shutdown Initiated...**")
-        await self.bot.close()
+        await self.admin_restart(ctx)
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))

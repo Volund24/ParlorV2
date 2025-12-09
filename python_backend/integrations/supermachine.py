@@ -155,50 +155,21 @@ class SupermachineImageGenerator:
             print("❌ All racers failed to leave the starting line.")
             return None
 
-        # Wait for the first one to cross the finish line (Webhook OR Polling)
+        # Wait for the first one to cross the finish line (Webhook ONLY)
         try:
-            print(f"⏱️ Waiting for the winner (Webhook or Polling)...")
+            print(f"⏱️ Waiting for the winner (Webhook Only Mode)...")
             
-            # Polling Loop
-            start_time = asyncio.get_running_loop().time()
-            timeout = 220
+            # Wait for the webhook to resolve the future
+            done, pending = await asyncio.wait(valid_futures, return_when=asyncio.FIRST_COMPLETED, timeout=220)
             
-            while (asyncio.get_running_loop().time() - start_time) < timeout:
-                # Check if any future is done
-                done = [f for f in valid_futures if f.done()]
-                if done:
-                    winner_future = done[0]
-                    image_url = winner_future.result()
-                    print(f"🏆 We have a winner! URL: {image_url}")
-                    return await self._download_image(image_url)
-                
-                # POLL: Check status of all pending generations
-                for cid in correlation_ids:
-                    if cid in self.pending_requests:
-                        gen_id = self.pending_requests[cid].get('generation_id')
-                        if gen_id:
-                            # Check API
-                            # Note: Assuming GET /v1/generations/{id} exists and returns status
-                            # If not, this block will just print errors and we rely on webhook
-                            try:
-                                async with aiohttp.ClientSession() as session:
-                                    headers = {"Authorization": f"Bearer {token}"}
-                                    async with session.get(f"https://api.supermachine.art/v1/generations/{gen_id}", headers=headers) as resp:
-                                        if resp.status == 200:
-                                            gen_data = await resp.json()
-                                            # Check for success status (adjust key based on actual API)
-                                            if gen_data.get('status') == 'succeeded' and gen_data.get('imageUrl'):
-                                                print(f"✅ Polling found completed image! ID: {gen_id}")
-                                                # Manually resolve the future
-                                                self.pending_requests[cid]['future'].set_result(gen_data.get('imageUrl'))
-                            except Exception as poll_err:
-                                # print(f"Polling error: {poll_err}") # Silence polling errors to avoid spam
-                                pass
-
-                await asyncio.sleep(5) # Wait 5 seconds before next check
-            
-            print("❌ Race timed out. No finishers.")
-            return None
+            if done:
+                winner_future = done.pop()
+                image_url = winner_future.result()
+                print(f"🏆 We have a winner! URL: {image_url}")
+                return await self._download_image(image_url)
+            else:
+                print("❌ Webhook timed out. No finishers.")
+                return None
 
         except Exception as e:
             print(f"Race Critical Error: {e}")
