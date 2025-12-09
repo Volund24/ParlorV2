@@ -1,0 +1,26 @@
+# Environment Variables
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# VS Code
+.vscode/
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# OS
+.DS_Store
+
+# Debug/Output
+debug_images/
+*.jpg
+*.png
+test_output.jpg
+pollinations_test.jpg

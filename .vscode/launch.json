@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Run Bot",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/python_backend/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}

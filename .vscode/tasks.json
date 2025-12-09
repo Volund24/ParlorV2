@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Bot",
+			"type": "shell",
+			"command": "/Users/techmac/Projects/Parlor/.venv/bin/python",
+			"args": [
+				"python_backend/main.py"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "none"
+		}
+	]
+}
