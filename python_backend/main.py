@@ -8,7 +8,7 @@ from integrations.supermachine import SupermachineImageGenerator
 # Initialize Supermachine Generator (Global)
 supermachine_gen = SupermachineImageGenerator()
 # Set the Tunnel URL provided by the user
-supermachine_gen.set_webhook_url("https://sharp-towns-lick.loca.lt")
+supermachine_gen.set_webhook_url("https://rare-pots-leave.loca.lt")
 
 # Intent setup
 intents = discord.Intents.default()
@@ -19,18 +19,25 @@ bot = commands.Bot(command_prefix='/', intents=intents, help_command=None)
 
 # --- Webhook Server ---
 async def handle_webhook(request):
+    print(f"🔔 WEBHOOK HIT: {request.path}")
     correlation_id = request.match_info.get('id')
     try:
         data = await request.json()
+        print(f"📦 WEBHOOK DATA ({correlation_id}): {data}")
         await supermachine_gen.handle_webhook(correlation_id, data)
         return web.Response(text="OK")
     except Exception as e:
-        print(f"Webhook Error: {e}")
+        print(f"❌ Webhook Error: {e}")
         return web.Response(status=500)
+
+async def handle_ping(request):
+    return web.Response(text="Pong! Tunnel is active.")
 
 async def start_web_server():
     app = web.Application()
     app.router.add_post('/webhook/supermachine/{id}', handle_webhook)
+    app.router.add_get('/ping', handle_ping)
+    app.router.add_get('/', handle_ping)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 3000)

@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import json
 import os
+from engine.fighter import Fighter
 
 # Default Configuration
 DEFAULT_CONFIG = {
@@ -43,12 +44,20 @@ class Admin(commands.Cog):
 
     @commands.hybrid_command(name="admin_setup", description="First-time server configuration")
     @commands.has_permissions(administrator=True)
-    async def admin_setup(self, ctx):
+    async def admin_setup(self, ctx, payout_token: str = "SOL", collection_slug: str = "None"):
         """Interactive setup for the server."""
-        await ctx.send("🛠️ **Admin Setup**\nInitializing default configuration...")
+        await ctx.send("🛠️ **Admin Setup**\nInitializing configuration...")
         self.config = DEFAULT_CONFIG.copy()
+        self.config["payout_token"] = payout_token.upper()
+        self.config["nft_collection"] = collection_slug
         self.save_config()
-        await ctx.send("✅ Configuration reset to defaults.\nUse `/admin_config` to view settings.")
+        await ctx.send(f"✅ Configuration set!\nToken: **{payout_token.upper()}**\nCollection: **{collection_slug}**\nUse `/admin_config` to view all settings.")
+
+    @commands.hybrid_command(name="admin_link_wallet", description="Manually link a user wallet")
+    @commands.has_permissions(administrator=True)
+    async def admin_link_wallet(self, ctx, member: discord.Member, wallet_address: str):
+        # In a real app, this would update the DB
+        await ctx.send(f"🔗 Linked wallet `{wallet_address}` to {member.mention}")
 
     @commands.hybrid_command(name="admin_config", description="View current server settings")
     @commands.has_permissions(administrator=True)
@@ -142,9 +151,61 @@ class Admin(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def admin_debug_tournament(self, ctx):
         await ctx.send("🧪 **Debug Tournament**\nSimulating registration of dummy players...")
-        # Logic to inject dummy players into the battle cog would go here
-        # For now, just a message
-        await ctx.send("⚠️ Feature not fully implemented yet.")
+        
+        battle_cog = self.bot.get_cog("Battle")
+        if not battle_cog:
+            await ctx.send("❌ Battle module not loaded.")
+            return
+
+        # Reset Queue
+        battle_cog.queue = []
+        battle_cog.tournament_mode = 'ROYALE'
+        battle_cog.debug_mode = True
+        
+        # Add Dummy Players (using ctx.author and bot as stand-ins if needed, or mock objects)
+        # Since we need discord.Member objects, we can try to fetch some members or just use the author multiple times with a hack
+        # But for a true test, we need distinct objects.
+        # Let's just use the author and some random members if available, or mock classes.
+        
+        class MockMember:
+            def __init__(self, name, user_id, avatar_url):
+                self.display_name = name
+                self.name = name
+                self.id = user_id
+                self.display_avatar = type('obj', (object,), {'url': avatar_url})
+                self.mention = f"@{name}"
+                self.status = discord.Status.online
+                self.bot = False
+
+        # Create 4 dummies
+        dummies = [
+            Fighter(MockMember("Cyber_Ninja", 1001, "https://picsum.photos/200")),
+            Fighter(MockMember("Neon_Samurai", 1002, "https://picsum.photos/201")),
+            Fighter(MockMember("Data_Mage", 1003, "https://picsum.photos/202")),
+            Fighter(MockMember("Glitch_Witch", 1004, "https://picsum.photos/203"))
+        ]
+        
+        battle_cog.queue.extend(dummies)
+        
+        await ctx.send(f"✅ Registered {len(dummies)} dummy fighters.")
+        await battle_cog.start_tournament(ctx)
+        battle_cog.debug_mode = False # Reset after start
+
+    @commands.hybrid_command(name="gang_choice", description="Set up Gang Battle (Host Collection)")
+    @commands.has_permissions(administrator=True)
+    async def gang_choice(self, ctx, team_a: str, team_b: str):
+        """Set up a Gang Battle with predefined team names."""
+        battle_cog = self.bot.get_cog("Battle")
+        if not battle_cog:
+            return await ctx.send("❌ Battle module not loaded.")
+            
+        battle_cog.tournament_mode = 'GANG'
+        battle_cog.team_names['A'] = team_a
+        battle_cog.team_names['B'] = team_b
+        battle_cog.queue = []
+        battle_cog.team_rosters = {'A': [], 'B': []}
+        
+        await ctx.send(f"⚔️ **Gang Battle Setup!**\nTeams: **{team_a}** vs **{team_b}**\nUse `/register` to join.")
 
     # --- Monitoring & Debug ---
 

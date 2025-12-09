@@ -7,7 +7,10 @@ Imagine a digital "Fight Club" hosted entirely within a Discord server. Users do
 It is not just a text game; it is a multimedia experience. Every match is narrated by an AI commentator and visualized by an AI artist in real-time, ensuring no two battles are ever the same.
 
 ## 2. What It Does (Key Features)
-* **🏆 Automated Tournaments:** The system manages full single-elimination brackets (8, 16, or 32 players). It handles seeding, match progression, and elimination automatically.
+* **🏆 Automated Tournaments:** 
+    * **Battle Royale:** Classic single-elimination bracket (1v1 matches until one champion remains).
+    * **Gang Battle:** Team-based warfare (Team A vs Team B). Players pick sides, and the team with the most wins takes the victory.
+    * The system handles seeding, match progression, and elimination automatically.
 * **🎲 The Betting Floor:** A fully functional betting engine allows spectators to wager tokens on specific fighters. It calculates odds, tracks pools, and distributes payouts to winners automatically after every match.
 * **🤖 AI-Driven Narrative:** 
     * **Primary:** **NVIDIA Narrator (Llama 3.1 405B)**. We switched from Gemini due to aggressive rate limiting and stability issues. Llama 3.1 provides robust, creative, and uncensored storytelling.

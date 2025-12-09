@@ -81,7 +81,7 @@ class SupermachineImageGenerator:
                 print("Skipping ControlNet due to download failure.")
 
         # Define the race
-        RACER_COUNT = 3
+        RACER_COUNT = 1
         correlation_ids = []
 
         async def launch_racer(racer_idx):
@@ -90,6 +90,7 @@ class SupermachineImageGenerator:
             
             payload = {
                 "prompt": prompt,
+                "negativePrompt": "bad anatomy, extra limbs, missing limbs, distorted hands, missing fingers, extra fingers, blurry, low quality, watermark, text, signature, ugly, deformed, noisy, low contrast",
                 "modelName": "Supermachine NextGen", 
                 "width": 1024,
                 "height": 1024,
@@ -121,10 +122,19 @@ class SupermachineImageGenerator:
                                 self.access_token = None
                             return None
                         
+                        data = await response.json()
+                        generation_id = data.get('id') # Capture the ID
+                        print(f"🏎️ Racer #{racer_idx} started! Gen ID: {generation_id}")
+
                         # Register the future
                         loop = asyncio.get_running_loop()
                         future = loop.create_future()
-                        self.pending_requests[correlation_id] = future
+                        
+                        # Store both the future AND the generation ID for polling
+                        self.pending_requests[correlation_id] = {
+                            'future': future,
+                            'generation_id': generation_id
+                        }
                         correlation_ids.append(correlation_id)
                         return future
             except Exception as e:
@@ -132,6 +142,8 @@ class SupermachineImageGenerator:
                 return None
 
         # Launch all racers concurrently
+        # RACER_COUNT increased for redundancy
+        RACER_COUNT = 2
         print(f"🏁 Starting Race with {RACER_COUNT} requests...")
         launch_tasks = [launch_racer(i+1) for i in range(RACER_COUNT)]
         futures = await asyncio.gather(*launch_tasks)
@@ -143,29 +155,50 @@ class SupermachineImageGenerator:
             print("❌ All racers failed to leave the starting line.")
             return None
 
-        # Wait for the first one to cross the finish line
+        # Wait for the first one to cross the finish line (Webhook OR Polling)
         try:
-            print(f"⏱️ Waiting for the winner...")
-            done, pending = await asyncio.wait(valid_futures, return_when=asyncio.FIRST_COMPLETED, timeout=180)
+            print(f"⏱️ Waiting for the winner (Webhook or Polling)...")
             
-            if done:
-                winner_future = done.pop()
-                image_url = winner_future.result()
-                print(f"🏆 We have a winner! URL: {image_url}")
+            # Polling Loop
+            start_time = asyncio.get_running_loop().time()
+            timeout = 220
+            
+            while (asyncio.get_running_loop().time() - start_time) < timeout:
+                # Check if any future is done
+                done = [f for f in valid_futures if f.done()]
+                if done:
+                    winner_future = done[0]
+                    image_url = winner_future.result()
+                    print(f"🏆 We have a winner! URL: {image_url}")
+                    return await self._download_image(image_url)
                 
-                # Cleanup: We don't strictly need to cancel the others, 
-                # but we can remove their IDs from pending_requests to keep memory clean
-                # (Actually, we can't easily map future -> ID here without extra tracking, 
-                # so we'll let handle_webhook clean them up when they eventually arrive or just ignore them)
-                
-                return await self._download_image(image_url)
-            else:
-                print("❌ Race timed out. No finishers.")
-                # Cleanup pending requests
+                # POLL: Check status of all pending generations
                 for cid in correlation_ids:
                     if cid in self.pending_requests:
-                        del self.pending_requests[cid]
-                return None
+                        gen_id = self.pending_requests[cid].get('generation_id')
+                        if gen_id:
+                            # Check API
+                            # Note: Assuming GET /v1/generations/{id} exists and returns status
+                            # If not, this block will just print errors and we rely on webhook
+                            try:
+                                async with aiohttp.ClientSession() as session:
+                                    headers = {"Authorization": f"Bearer {token}"}
+                                    async with session.get(f"https://api.supermachine.art/v1/generations/{gen_id}", headers=headers) as resp:
+                                        if resp.status == 200:
+                                            gen_data = await resp.json()
+                                            # Check for success status (adjust key based on actual API)
+                                            if gen_data.get('status') == 'succeeded' and gen_data.get('imageUrl'):
+                                                print(f"✅ Polling found completed image! ID: {gen_id}")
+                                                # Manually resolve the future
+                                                self.pending_requests[cid]['future'].set_result(gen_data.get('imageUrl'))
+                            except Exception as poll_err:
+                                # print(f"Polling error: {poll_err}") # Silence polling errors to avoid spam
+                                pass
+
+                await asyncio.sleep(5) # Wait 5 seconds before next check
+            
+            print("❌ Race timed out. No finishers.")
+            return None
 
         except Exception as e:
             print(f"Race Critical Error: {e}")
@@ -176,28 +209,29 @@ class SupermachineImageGenerator:
         if correlation_id in self.pending_requests:
             print(f"Webhook received for ID: {correlation_id}")
             
-            # Inspect data for image URL
-            image_url = data.get('url') or data.get('imageUrl') or data.get('output_url')
-            
-            if not image_url:
-                # Check for 'images' array
-                if 'images' in data and isinstance(data['images'], list) and len(data['images']) > 0:
-                     image_url = data['images'][0].get('url')
+            # Resolve the future
+            future_info = self.pending_requests[correlation_id]
+            # Handle both new dict format and legacy future format (just in case)
+            future = future_info['future'] if isinstance(future_info, dict) else future_info
 
-            if not image_url:
-                print(f"Could not find image URL in webhook data: {data}")
-                # Try to find *any* string that looks like a URL
-                for key, value in data.items():
-                    if isinstance(value, str) and value.startswith("http"):
-                        image_url = value
-                        break
+            if not future.done():
+                # Extract URL from webhook data
+                image_url = data.get('imageUrl') or data.get('url') or data.get('output_url')
+                
+                if not image_url:
+                    # Check for 'images' array
+                    if 'images' in data and isinstance(data['images'], list) and len(data['images']) > 0:
+                        image_url = data['images'][0].get('url')
+
+                if image_url:
+                    future.set_result(image_url)
+                else:
+                    print(f"Webhook data missing 'imageUrl': {data}")
+                    future.set_exception(Exception("No image URL found in webhook"))
             
-            if image_url:
-                self.pending_requests[correlation_id].set_result(image_url)
-            else:
-                self.pending_requests[correlation_id].set_exception(Exception("No image URL found"))
-            
-            del self.pending_requests[correlation_id]
+            # Cleanup
+            if correlation_id in self.pending_requests:
+                del self.pending_requests[correlation_id]
         else:
             print(f"Received webhook for unknown ID: {correlation_id}")
 

@@ -46,6 +46,7 @@ class NvidiaVision:
                 async with session.post(self.api_url, headers=headers, json=payload) as response:
                     if response.status != 200:
                         print(f"NVIDIA Vision API Error: {response.status}")
+                        # Fallback for 500 errors or other API issues
                         return "a mysterious fighter"
                     
                     data = await response.json()

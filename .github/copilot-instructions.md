@@ -17,7 +17,7 @@
 - **Language:** Python 3.10+
 - **Framework:** discord.py
 - **Database:** SQLite with SQLAlchemy
-- **AI:** Google Gemini (Text), NVIDIA Stable Diffusion XL (Images)
+- **AI:** NVIDIA Llama 3.1 (Text), NVIDIA Stable Diffusion XL (Images)
 - **Blockchain:** Solana
 
 ## Development Guidelines
