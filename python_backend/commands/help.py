@@ -12,9 +12,8 @@ class Help(commands.Cog):
         embed.add_field(
             name="⚔️ Battle & Tournament",
             value=(
-                "`/register` - Join the queue for the next tournament/battle.\n"
-                "`/battle` - (Legacy) Start a quick 1v1 or register.\n"
-                "`/flex` - Show off your stats or NFT."
+                "`/register` - Join the queue for the next tournament.\n"
+                "`/battle` - Start an instant 1v1 battle."
             ),
             inline=False
         )
@@ -46,7 +45,7 @@ class Help(commands.Cog):
         
         embed.add_field(
             name="🚀 Setup",
-            value="`/admin_setup`, `/admin_config`, `/admin_permissions`",
+            value="`/admin_setup`, `/admin_config`",
             inline=False
         )
         

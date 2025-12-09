@@ -69,7 +69,6 @@ async def on_ready():
 async def load_extensions():
     # Load extensions/cogs here
     await bot.load_extension('commands.battle')
-    await bot.load_extension('commands.flex')
     await bot.load_extension('commands.betting')
     await bot.load_extension('commands.admin')
     await bot.load_extension('commands.help')
