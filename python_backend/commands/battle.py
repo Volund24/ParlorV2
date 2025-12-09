@@ -40,7 +40,7 @@ class Battle(commands.Cog):
         admin_cog = self.bot.get_cog("Admin")
         if admin_cog:
             return admin_cog.config
-        return {"tournament_size": 2, "theme": "Cyberpunk Alleyway"}
+        return {"tournament_size": 8, "theme": "Cyberpunk Alleyway"}
 
     async def generate_image_hybrid(self, prompt, prefer_nvidia=False, control_image_url=None):
         """
@@ -69,7 +69,8 @@ class Battle(commands.Cog):
 
         # 3. Pollinations (Standard Fallback)
         print("DEBUG: Hybrid Gen - Attempting Pollinations...")
-        img = await self.nvidia_artist.generate_image(prompt) # This method already has Pollinations logic inside
+        # Force Pollinations by not passing prefer_nvidia=True
+        img = await self.nvidia_artist.generate_image(prompt, prefer_nvidia=False) 
         return img
 
     @commands.hybrid_command(name='register')
@@ -103,9 +104,40 @@ class Battle(commands.Cog):
             await self.start_tournament(ctx)
 
     @commands.hybrid_command(name='battle')
-    async def battle(self, ctx):
-        """(Legacy) Register for the battle queue."""
-        await self.register(ctx)
+    async def battle(self, ctx, opponent: discord.Member = None):
+        """Start an instant 1v1 battle. If no opponent is specified, a random one is chosen."""
+        
+        player_a = ctx.author
+        player_b = opponent
+        auto_selected = False
+
+        if player_b is None:
+            # Select a random online user
+            candidates = [
+                m for m in ctx.guild.members 
+                if not m.bot and m.id != player_a.id and m.status != discord.Status.offline
+            ]
+            
+            if not candidates:
+                # Fallback to all non-bots if no one is "online" (e.g. invisible)
+                candidates = [
+                    m for m in ctx.guild.members 
+                    if not m.bot and m.id != player_a.id
+                ]
+            
+            if not candidates:
+                await ctx.send("⚠️ No eligible opponents found!")
+                return
+                
+            player_b = random.choice(candidates)
+            auto_selected = True
+
+        if auto_selected:
+             await ctx.send(f"User didn't choose an opponent, so the Arena chose for them. Their opponent is {player_b.mention}")
+        else:
+             await ctx.send(f"⚔️ **Instant Battle Initiated!**\n{player_a.mention} vs {player_b.mention}")
+             
+        await self.run_battle(ctx, player_a, player_b)
 
     async def start_tournament(self, ctx):
         self.tournament_active = True
@@ -209,7 +241,7 @@ class Battle(commands.Cog):
             
             await ctx.send(embed=embed1, file=file1)
             
-            # --- BETTING PHASE (Async Delay) ---
+                        # --- BETTING PHASE (Async Delay) ---
             if config.get("betting_enabled", False):
                 await update_status("💰 **Betting Window Open!** (Place your bets now!)")
                 # Simulate betting window

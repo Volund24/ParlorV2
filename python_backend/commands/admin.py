@@ -6,7 +6,7 @@ import os
 
 # Default Configuration
 DEFAULT_CONFIG = {
-    "tournament_size": 2, # Default to 1v1 for now
+    "tournament_size": 8, # Default to smallest tournament size
     "payout_token": "SOL",
     "secondary_token": None,
     "treasury_wallet": None,

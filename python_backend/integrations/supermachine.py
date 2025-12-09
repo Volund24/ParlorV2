@@ -72,73 +72,103 @@ class SupermachineImageGenerator:
             print("Cannot generate image: Authentication failed.")
             return None
 
-        correlation_id = str(uuid.uuid4())
-        webhook_url = f"{self.webhook_base_url}/webhook/supermachine/{correlation_id}"
-        
-        # Base Payload
-        payload = {
-            "prompt": prompt,
-            "modelName": "Supermachine NextGen", 
-            "width": 1024,
-            "height": 1024,
-            "imageNumber": 1,
-            "generationMode": "GENERATE",
-            "webhookUrl": webhook_url,
-        }
-
-        # Add ControlNet if image URL is provided
+        # Pre-process ControlNet image if needed (do this once)
+        encoded_control_image = None
         if control_image_url:
             print(f"Downloading control image from: {control_image_url}")
-            encoded_image = await self._download_and_encode_image(control_image_url)
-            if encoded_image:
-                payload["refImage"] = encoded_image
+            encoded_control_image = await self._download_and_encode_image(control_image_url)
+            if not encoded_control_image:
+                print("Skipping ControlNet due to download failure.")
+
+        # Define the race
+        RACER_COUNT = 3
+        correlation_ids = []
+
+        async def launch_racer(racer_idx):
+            correlation_id = str(uuid.uuid4())
+            webhook_url = f"{self.webhook_base_url}/webhook/supermachine/{correlation_id}"
+            
+            payload = {
+                "prompt": prompt,
+                "modelName": "Supermachine NextGen", 
+                "width": 1024,
+                "height": 1024,
+                "imageNumber": 1,
+                "generationMode": "GENERATE",
+                "webhookUrl": webhook_url,
+            }
+
+            if encoded_control_image:
+                payload["refImage"] = encoded_control_image
                 payload["controlType"] = "reference_only"
                 payload["controlMode"] = "0" # Balance
                 payload["controlnetmodule_id"] = "3" # Reference Control
-                print("Added ControlNet parameters to payload.")
-            else:
-                print("Skipping ControlNet due to download failure.")
-        
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}"
-        }
 
-        print(f"Sending Supermachine request (ID: {correlation_id})...")
-        print(f"Webhook URL: {webhook_url}")
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {token}"
+            }
+
+            print(f"🏎️ Racer #{racer_idx} starting... (ID: {correlation_id})")
+            
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(self.api_url, json=payload, headers=headers) as response:
+                        if response.status != 200:
+                            text = await response.text()
+                            print(f"Racer #{racer_idx} Crashed: {response.status} - {text}")
+                            if response.status == 401:
+                                self.access_token = None
+                            return None
+                        
+                        # Register the future
+                        loop = asyncio.get_running_loop()
+                        future = loop.create_future()
+                        self.pending_requests[correlation_id] = future
+                        correlation_ids.append(correlation_id)
+                        return future
+            except Exception as e:
+                print(f"Racer #{racer_idx} Exception: {e}")
+                return None
+
+        # Launch all racers concurrently
+        print(f"🏁 Starting Race with {RACER_COUNT} requests...")
+        launch_tasks = [launch_racer(i+1) for i in range(RACER_COUNT)]
+        futures = await asyncio.gather(*launch_tasks)
         
+        # Filter out any that failed to launch
+        valid_futures = [f for f in futures if f is not None]
+        
+        if not valid_futures:
+            print("❌ All racers failed to leave the starting line.")
+            return None
+
+        # Wait for the first one to cross the finish line
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.api_url, json=payload, headers=headers) as response:
-                    if response.status != 200:
-                        text = await response.text()
-                        print(f"Supermachine API Error: {response.status} - {text}")
-                        # If 401, maybe token expired? Reset it.
-                        if response.status == 401:
-                            self.access_token = None
-                        return None
-                    
-                    data = await response.json()
-                    print(f"Supermachine Request Sent. Response: {data}")
-                    
-                    # Create a future to wait for the webhook
-                    loop = asyncio.get_running_loop()
-                    future = loop.create_future()
-                    self.pending_requests[correlation_id] = future
-                    
-                    # Wait for the webhook (with timeout)
-                    try:
-                        print("Waiting for webhook callback...")
-                        image_url = await asyncio.wait_for(future, timeout=120) # 2 minute timeout
-                        return await self._download_image(image_url)
-                    except asyncio.TimeoutError:
-                        print(f"Supermachine Timed Out (ID: {correlation_id})")
-                        if correlation_id in self.pending_requests:
-                            del self.pending_requests[correlation_id]
-                        return None
+            print(f"⏱️ Waiting for the winner...")
+            done, pending = await asyncio.wait(valid_futures, return_when=asyncio.FIRST_COMPLETED, timeout=180)
+            
+            if done:
+                winner_future = done.pop()
+                image_url = winner_future.result()
+                print(f"🏆 We have a winner! URL: {image_url}")
+                
+                # Cleanup: We don't strictly need to cancel the others, 
+                # but we can remove their IDs from pending_requests to keep memory clean
+                # (Actually, we can't easily map future -> ID here without extra tracking, 
+                # so we'll let handle_webhook clean them up when they eventually arrive or just ignore them)
+                
+                return await self._download_image(image_url)
+            else:
+                print("❌ Race timed out. No finishers.")
+                # Cleanup pending requests
+                for cid in correlation_ids:
+                    if cid in self.pending_requests:
+                        del self.pending_requests[cid]
+                return None
 
         except Exception as e:
-            print(f"Supermachine Exception: {e}")
+            print(f"Race Critical Error: {e}")
             return None
 
     async def handle_webhook(self, correlation_id, data):

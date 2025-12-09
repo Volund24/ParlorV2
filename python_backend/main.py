@@ -8,7 +8,7 @@ from integrations.supermachine import SupermachineImageGenerator
 # Initialize Supermachine Generator (Global)
 supermachine_gen = SupermachineImageGenerator()
 # Set the Tunnel URL provided by the user
-supermachine_gen.set_webhook_url("https://quick-llamas-wink.loca.lt")
+supermachine_gen.set_webhook_url("https://sharp-towns-lick.loca.lt")
 
 # Intent setup
 intents = discord.Intents.default()
