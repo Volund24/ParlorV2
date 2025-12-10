@@ -6,6 +6,9 @@ from integrations.nvidia_narrator import NvidiaNarrator
 from integrations.nvidia_image_generator import NvidiaImageGenerator
 from integrations.nvidia_vision import NvidiaVision
 from commands.admin import Admin # Import Admin to access config
+from database.db_manager import get_db
+from database.models import Player
+from datetime import datetime, timedelta
 import asyncio
 import io
 import random
@@ -31,65 +34,100 @@ from engine.fighter import Fighter, AvatarProxy
 
 # --- UI Classes for Tournament Registration ---
 
-class TeamNameModal(Modal, title="Name Your Teams"):
-    team_a_name = TextInput(label="Team A Name", placeholder="e.g. The Crips", default="Team A")
-    team_b_name = TextInput(label="Team B Name", placeholder="e.g. The Bloods", default="Team B")
-
-    def __init__(self, cog, ctx, fighter):
+class TournamentHostModal(Modal, title="Tournament Customization"):
+    def __init__(self, cog, ctx, fighter, mode, arena, style):
         super().__init__()
         self.cog = cog
         self.ctx = ctx
         self.fighter = fighter
+        self.mode = mode
+        self.arena_val = arena
+        self.style_val = style
+
+        # Add fields dynamically
+        if mode == 'GANG':
+            self.team_a = TextInput(label="My Team Name", default="The Pepegas", placeholder="Name your squad")
+            self.team_b = TextInput(label="Opponent Team Name", default="The Jeets", placeholder="Name the enemy")
+            self.add_item(self.team_a)
+            self.add_item(self.team_b)
+        
+        if arena == 'Custom':
+            self.custom_arena = TextInput(label="Describe the Arena", placeholder="e.g. A burning spaceship in orbit")
+            self.add_item(self.custom_arena)
+            
+        if style == 'Custom':
+            self.custom_style = TextInput(label="Narrator Style", placeholder="e.g. 1920s Gangster, Shakespearean")
+            self.add_item(self.custom_style)
 
     async def on_submit(self, interaction: discord.Interaction):
-        if self.fighter in self.cog.queue:
-             return await interaction.response.send_message("You are already registered!", ephemeral=True)
-
-        self.cog.team_names['A'] = self.team_a_name.value
-        self.cog.team_names['B'] = self.team_b_name.value
-        self.cog.tournament_mode = 'GANG'
+        # Gather values
+        final_arena = self.custom_arena.value if hasattr(self, 'custom_arena') else self.arena_val
+        final_style = self.custom_style.value if hasattr(self, 'custom_style') else self.style_val
+        t_a = self.team_a.value if hasattr(self, 'team_a') else "Team A"
+        t_b = self.team_b.value if hasattr(self, 'team_b') else "Team B"
         
-        # Register the user to Team A (default for creator)
-        self.cog.queue.append(self.fighter)
-        self.cog.team_rosters['A'].append(self.fighter)
-        
-        # Update the original message to show selection
-        try:
-            await interaction.response.edit_message(content=f"⚔️ **Gang Battle Mode Selected!**\nTeams: **{self.team_a_name.value}** vs **{self.team_b_name.value}**", view=None, embed=None)
-        except:
-            # Fallback if edit fails (e.g. message deleted)
-            await interaction.response.defer()
+        await self.cog.finalize_setup(interaction, self.fighter, self.mode, final_arena, final_style, t_a, t_b)
 
-        await interaction.followup.send(
-            f"{self.fighter.mention} joined **{self.team_a_name.value}**!",
-            embed=self.cog.get_registration_embed()
-        )
-
-class TournamentModeView(View):
+class TournamentHostView(View):
     def __init__(self, cog, ctx, fighter):
-        super().__init__(timeout=60)
+        super().__init__(timeout=120)
         self.cog = cog
         self.ctx = ctx
         self.fighter = fighter
-
-    @discord.ui.button(label="Battle Royale (Bracket)", style=discord.ButtonStyle.danger, emoji="🏆")
-    async def royale_button(self, interaction: discord.Interaction, button: Button):
-        if interaction.user != self.ctx.author:
-            return await interaction.response.send_message("Only the first player can decide the mode!", ephemeral=True)
         
-        if self.fighter in self.cog.queue:
-             return await interaction.response.send_message("You are already registered!", ephemeral=True)
+        self.mode = None
+        self.arena = "Cyberpunk Alleyway" # Default
+        self.style = "Dynamic Action" # Default
 
-        self.cog.tournament_mode = 'ROYALE'
-        self.cog.queue.append(self.fighter)
-        await interaction.response.edit_message(content="🏆 **Battle Royale Mode Selected!**", view=None, embed=self.cog.get_registration_embed())
+    @discord.ui.select(placeholder="Select Battle Mode", options=[
+        discord.SelectOption(label="Battle Royale", value="ROYALE", description="8-Player Bracket Fight", emoji="🏆"),
+        discord.SelectOption(label="Gang War", value="GANG", description="Team vs Team Battle", emoji="⚔️")
+    ])
+    async def select_mode(self, interaction: discord.Interaction, select: Select):
+        self.mode = select.values[0]
+        await interaction.response.defer()
 
-    @discord.ui.button(label="Gang Battle (Teams)", style=discord.ButtonStyle.blurple, emoji="⚔️")
-    async def gang_button(self, interaction: discord.Interaction, button: Button):
-        if interaction.user != self.ctx.author:
-            return await interaction.response.send_message("Only the first player can decide the mode!", ephemeral=True)
+    @discord.ui.select(placeholder="Select Arena", options=[
+        discord.SelectOption(label="Cyberpunk Alleyway", value="Cyberpunk Alleyway"),
+        discord.SelectOption(label="Medieval Castle", value="Medieval Castle"),
+        discord.SelectOption(label="Space Station", value="Space Station"),
+        discord.SelectOption(label="Hell's Kitchen", value="Hell's Kitchen"),
+        discord.SelectOption(label="✨ Custom Arena...", value="Custom")
+    ])
+    async def select_arena(self, interaction: discord.Interaction, select: Select):
+        self.arena = select.values[0]
+        await interaction.response.defer()
+
+    @discord.ui.select(placeholder="Select Narrator Style", options=[
+        discord.SelectOption(label="Dynamic Action", value="Dynamic Action"),
+        discord.SelectOption(label="Dark & Gritty", value="Dark & Gritty"),
+        discord.SelectOption(label="Comedic/Sarcastic", value="Comedic"),
+        discord.SelectOption(label="Hype Man", value="Hype Man"),
+        discord.SelectOption(label="✨ Custom Style...", value="Custom")
+    ])
+    async def select_style(self, interaction: discord.Interaction, select: Select):
+        self.style = select.values[0]
+        await interaction.response.defer()
+
+    @discord.ui.button(label="Confirm Setup", style=discord.ButtonStyle.green)
+    async def confirm(self, interaction: discord.Interaction, button: Button):
+        if not self.mode:
+            return await interaction.response.send_message("⚠️ Please select a Battle Mode first!", ephemeral=True)
         
-        await interaction.response.send_modal(TeamNameModal(self.cog, self.ctx, self.fighter))
+        if interaction.user != self.ctx.author:
+            return await interaction.response.send_message("Only the host can configure the tournament.", ephemeral=True)
+
+        # Check if we need the Modal
+        needs_modal = False
+        if self.mode == 'GANG': needs_modal = True
+        if self.arena == 'Custom': needs_modal = True
+        if self.style == 'Custom': needs_modal = True
+        
+        if needs_modal:
+            await interaction.response.send_modal(TournamentHostModal(self.cog, self.ctx, self.fighter, self.mode, self.arena, self.style))
+        else:
+            # Fast Path - No Modal needed
+            await self.cog.finalize_setup(interaction, self.fighter, self.mode, self.arena, self.style)
 
 class TeamButton(Button):
     def __init__(self, label, team, style):
@@ -127,7 +165,7 @@ class TeamButton(Button):
 
 class TeamSelectView(View):
     def __init__(self, cog, ctx):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None) # No timeout for the lobby view
         self.cog = cog
         self.ctx = ctx
         
@@ -207,6 +245,8 @@ class Battle(commands.Cog):
         
         # Tournament State
         self.tournament_mode = None # 'ROYALE' or 'GANG'
+        self.arena_theme = None
+        self.narration_style = None
         self.team_names = {'A': 'Team A', 'B': 'Team B'}
         self.team_rosters = {'A': [], 'B': []}
         self.vision = NvidiaVision()
@@ -217,6 +257,46 @@ class Battle(commands.Cog):
         self.tournament_active = False
         self.current_match_id = None
         self.debug_mode = False # Flag for debug tournament
+
+    async def finalize_setup(self, interaction, fighter, mode, arena, style, team_a="Team A", team_b="Team B"):
+        """Called by View or Modal to finish host setup."""
+        if fighter in self.queue:
+             return await interaction.response.send_message("You are already registered!", ephemeral=True)
+
+        # Save Settings
+        self.tournament_mode = mode
+        self.arena_theme = arena
+        self.narration_style = style
+        self.team_names['A'] = team_a
+        self.team_names['B'] = team_b
+        
+        # Register Host
+        self.queue.append(fighter)
+        
+        if mode == 'GANG':
+            # In Gang Mode, we DO NOT auto-register the host to a team yet. 
+            # They must pick a team like everyone else.
+            # Wait, actually, if they named "My Team", they should probably be on it.
+            # Let's assume Team A is "My Team".
+            self.team_rosters['A'].append(fighter)
+            
+            await interaction.response.edit_message(
+                content=f"⚔️ **Gang Battle: {team_a} vs {team_b}**\nArena: {arena}\nStyle: {style}", 
+                view=None, 
+                embed=None
+            )
+            
+            # Show Team Select for everyone (including host? No, host is on A)
+            view = TeamSelectView(self, interaction.channel) # Pass channel context? Or just use interaction
+            # We need a fresh view for the channel
+            await interaction.followup.send(f"⚔️ **Gang Battle Open!**\nHost: {fighter.mention} leads **{team_a}**!\nChoose your side:", view=view)
+            
+        else: # Royale
+            await interaction.response.edit_message(
+                content=f"🏆 **Battle Royale Mode Selected!**\nArena: {arena}\nStyle: {style}", 
+                view=None, 
+                embed=self.get_registration_embed()
+            )
 
     def get_registration_embed(self):
         config = self.get_config()
@@ -260,6 +340,10 @@ class Battle(commands.Cog):
         3. Fallback to Pollinations.
         4. Fallback to NVIDIA Flux (Sanitized).
         """
+        print(f"DEBUG: Hybrid Gen Called. Prompt: {prompt[:50]}...")
+        print(f"DEBUG: Supermachine Object: {self.supermachine}")
+        if self.supermachine:
+            print(f"DEBUG: Supermachine Webhook URL: {self.supermachine.webhook_base_url}")
         
         # 1. NVIDIA Preference
         if prefer_nvidia:
@@ -276,6 +360,8 @@ class Battle(commands.Cog):
                 return img
             else:
                 print("DEBUG: Supermachine Failed/Timed Out. Falling back...")
+        else:
+            print("DEBUG: Supermachine skipped (Not configured or missing Webhook URL)")
 
         # 3. Pollinations (Standard Fallback)
         print("DEBUG: Hybrid Gen - Attempting Pollinations...")
@@ -300,11 +386,13 @@ class Battle(commands.Cog):
         if len(self.queue) == 0:
             # Reset State
             self.tournament_mode = None
+            self.arena_theme = None
+            self.narration_style = None
             self.team_rosters = {'A': [], 'B': []}
             self.team_names = {'A': 'Team A', 'B': 'Team B'}
             
-            view = TournamentModeView(self, ctx, fighter)
-            await ctx.send(f"👋 Welcome {fighter.mention}! You are the first to register.\nPlease select the Tournament Mode:", view=view)
+            view = TournamentHostView(self, ctx, fighter)
+            await ctx.send(f"👋 Welcome {fighter.mention}! You are the Host.\nConfigure the Tournament:", view=view)
             return
 
         # If mode is not selected yet (shouldn't happen if first user flow works, but safety check)
@@ -337,6 +425,39 @@ class Battle(commands.Cog):
     async def battle(self, ctx, opponent: discord.Member = None):
         """Start an instant 1v1 battle. If no opponent is specified, a random one is chosen."""
         
+        # --- Daily Limit Check (1 per day per user, Admins exempt) ---
+        if not ctx.author.guild_permissions.administrator:
+            limit_reached = False
+            db_gen = get_db()
+            db = next(db_gen)
+            try:
+                player = db.query(Player).filter_by(discord_id=str(ctx.author.id)).first()
+                if player and player.last_1v1_battle_at:
+                    # Check if last battle was today (UTC)
+                    if player.last_1v1_battle_at.date() == datetime.utcnow().date():
+                        limit_reached = True
+                
+                if not limit_reached:
+                    # Update timestamp immediately to prevent spam
+                    if not player:
+                        player = Player(discord_id=str(ctx.author.id))
+                        db.add(player)
+                    player.last_1v1_battle_at = datetime.utcnow()
+                    db.commit()
+            except Exception as e:
+                print(f"Database Error in Daily Limit Check: {e}")
+            finally:
+                # Close DB session
+                try:
+                    next(db_gen)
+                except StopIteration:
+                    pass
+
+            if limit_reached:
+                await ctx.send(f"🛑 **Daily Limit Reached!**\n{ctx.author.mention}, you have already fought your 1v1 battle today. Come back tomorrow or join a Tournament!")
+                return
+        # -------------------------------------------------------------
+
         player_a = ctx.author
         player_b = opponent
         auto_selected = False
@@ -353,6 +474,13 @@ class Battle(commands.Cog):
                 candidates = [
                     m for m in ctx.guild.members 
                     if not m.bot and m.id != player_a.id
+                ]
+
+            if not candidates:
+                # Final Fallback: Allow bots (like battle-dev) if no humans are found
+                candidates = [
+                    m for m in ctx.guild.members 
+                    if m.id != player_a.id
                 ]
             
             if not candidates:
@@ -413,6 +541,17 @@ class Battle(commands.Cog):
         current_players = list(self.queue) # Copy
         random.shuffle(current_players)
         
+        # Tournament Stats Tracking
+        tournament_history = []
+        
+        # Initial Participants Embed
+        embed = discord.Embed(title="🏆 Tournament Participants", color=discord.Color.gold())
+        desc = ""
+        for i, p in enumerate(current_players):
+            desc += f"**{i+1}.** {p.display_name}\n"
+        embed.description = desc
+        await ctx.send(embed=embed)
+        
         # Initial Bracket Display
         bracket_str = "🏆 **Tournament Bracket**\n"
         for i in range(0, len(current_players), 2):
@@ -439,14 +578,32 @@ class Battle(commands.Cog):
             # Run matches
             for p1, p2 in matches:
                 await ctx.send(f"⚔️ **Match Up:** {p1.mention} vs {p2.mention}")
-                winner = await self.run_battle(ctx, p1, p2, enable_betting=True)
+                winner, match_stats = await self.run_battle(ctx, p1, p2, enable_betting=True)
+                
                 if winner:
                     next_round_players.append(winner)
                     await ctx.send(f"🏅 {winner.mention} advances to the next round!")
+                    
+                    # Record Stats
+                    tournament_history.append({
+                        'round': round_num,
+                        'p1': p1.display_name,
+                        'p2': p2.display_name,
+                        'winner': winner.display_name,
+                        'bets': match_stats.get('winners', [])
+                    })
                 else:
                     # Should not happen, but if error, pick random?
                     await ctx.send("⚠️ Error in match. Advancing random player.")
-                    next_round_players.append(random.choice([p1, p2]))
+                    w = random.choice([p1, p2])
+                    next_round_players.append(w)
+                    tournament_history.append({
+                        'round': round_num,
+                        'p1': p1.display_name,
+                        'p2': p2.display_name,
+                        'winner': w.display_name,
+                        'bets': []
+                    })
                 
                 await asyncio.sleep(5) # Cooldown
             
@@ -462,7 +619,35 @@ class Battle(commands.Cog):
             
         # Champion
         if current_players:
-            await ctx.send(f"👑 **THE CHAMPION IS {current_players[0].mention}!** 👑")
+            champion = current_players[0]
+            await ctx.send(f"👑 **THE CHAMPION IS {champion.mention}!** 👑")
+            
+            # Final Summary Embed
+            summary_embed = discord.Embed(title="📜 Tournament Summary", color=discord.Color.purple())
+            summary_embed.add_field(name="👑 Champion", value=champion.display_name, inline=False)
+            
+            # Betting Summary
+            total_payout = 0
+            big_winners = []
+            
+            for match in tournament_history:
+                for bet_win in match['bets']:
+                    total_payout += bet_win['winnings']
+                    big_winners.append(bet_win)
+            
+            # Sort big winners
+            big_winners.sort(key=lambda x: x['profit'], reverse=True)
+            top_winners = big_winners[:5]
+            
+            bet_desc = f"Total Payout: {total_payout:.2f}\n\n**Top Bettors:**\n"
+            if top_winners:
+                for w in top_winners:
+                    bet_desc += f"• {w['user_name']}: +{w['profit']:.2f}\n"
+            else:
+                bet_desc += "No bets won."
+                
+            summary_embed.add_field(name="💰 Betting Highlights", value=bet_desc, inline=False)
+            await ctx.send(embed=summary_embed)
 
     async def run_gang_battle(self, ctx):
         team_a = list(self.team_rosters['A'])
@@ -483,7 +668,7 @@ class Battle(commands.Cog):
             
             await ctx.send(f"🥊 **Match {i+1}:** {p1.mention} ({self.team_names['A']}) vs {p2.mention} ({self.team_names['B']})")
             
-            winner = await self.run_battle(ctx, p1, p2, enable_betting=True)
+            winner, _ = await self.run_battle(ctx, p1, p2, enable_betting=True)
             
             if winner in team_a:
                 wins['A'] += 1
@@ -507,7 +692,9 @@ class Battle(commands.Cog):
 
     async def run_battle(self, ctx, player_a, player_b, enable_betting=False):
         config = self.get_config()
-        theme = config.get("theme", "Cyberpunk Alleyway")
+        # Use dynamic theme if set, else fallback to config
+        theme = self.arena_theme if self.arena_theme else config.get("theme", "Cyberpunk Alleyway")
+        match_stats = {'winners': []}
         
         # --- BETTING PHASE ---
         self.current_match_id = str(uuid.uuid4())
@@ -550,20 +737,29 @@ class Battle(commands.Cog):
         
         try:
             # Create tasks for parallel execution
-            print("Starting AI Generation...")
+            print("DEBUG: Starting AI Generation Phase...")
             await update_status("👁️ **Scanning Fighters...** (Analyzing Avatars)")
             
             # Step 2a: Analyze Avatars (Vision)
-            print("Analyzing Avatars...")
-            desc_a_task = self.vision.describe_avatar(player_a.display_avatar.url)
-            desc_b_task = self.vision.describe_avatar(player_b.display_avatar.url)
+            print("DEBUG: Calling Vision API...")
             
-            desc_a, desc_b = await asyncio.gather(desc_a_task, desc_b_task)
+            # DEBUG / PEPE MODE OVERRIDE
+            if self.debug_mode or "Pepe" in player_a.display_name:
+                print("DEBUG: Using Pepe Mode (Skipping Vision)")
+                desc_a = "Pepe the Frog, green skin, big eyes, meme character"
+                desc_b = "Pepe the Frog, green skin, big eyes, meme character"
+            else:
+                desc_a_task = self.vision.describe_avatar(player_a.display_avatar.url)
+                desc_b_task = self.vision.describe_avatar(player_b.display_avatar.url)
+                desc_a, desc_b = await asyncio.gather(desc_a_task, desc_b_task)
+            
+            print(f"DEBUG: Vision Complete. Desc A: {desc_a[:20]}...")
 
             await update_status("✍️ **Writing the Legend...** (Generating Story)")
 
             # Step 2b: Generate Text (Narrator)
             # --- PARALLEL GENERATION START ---
+            print("DEBUG: Starting Narrator Tasks...")
             await update_status("🚀 **Launching Battle...** (Generating All Scenes)")
             
             # 1. Define Prompts (Randomized)
@@ -587,16 +783,21 @@ class Battle(commands.Cog):
             )
 
             # 2. Create Tasks
-            task_text_meeting = asyncio.create_task(self.narrator.generate_meeting(player_a.display_name, player_b.display_name, theme))
-            task_text_clash = asyncio.create_task(self.narrator.generate_clash(player_a.display_name, player_b.display_name))
-            task_text_victory = asyncio.create_task(self.narrator.generate_victory(winner.display_name, loser.display_name))
+            task_text_meeting = asyncio.create_task(self.narrator.generate_meeting(player_a.display_name, player_b.display_name, theme, style=self.narration_style))
+            task_text_clash = asyncio.create_task(self.narrator.generate_clash(player_a.display_name, player_b.display_name, style=self.narration_style))
+            task_text_victory = asyncio.create_task(self.narrator.generate_victory(winner.display_name, loser.display_name, style=self.narration_style))
             
             # --- SCENE 1: THE MEETING ---
+            print("DEBUG: Processing Scene 1...")
             await update_status("🎨 **Scene 1/3: The Meeting** (Processing...)")
             
             meeting_text = await task_text_meeting
+            print(f"DEBUG: Meeting Text: {meeting_text[:20]}...")
+            
             # Use Player A's avatar as control for Scene 1
+            print("DEBUG: Generating Scene 1 Image...")
             meeting_image_data = await self.generate_image_hybrid(meeting_prompt, prefer_nvidia=False, control_image_url=player_a.display_avatar.url)
+            print(f"DEBUG: Scene 1 Image Data Type: {type(meeting_image_data)}")
             
             embed1 = discord.Embed(title="⚔️ THE BACKROOM PARLOR ⚔️", color=discord.Color.blue())
             embed1.add_field(name="👀 The Stare Down", value=f"*{meeting_text}*", inline=False)
@@ -615,6 +816,7 @@ class Battle(commands.Cog):
                 await asyncio.sleep(10)
 
             # --- SCENE 2: THE CLASH ---
+            print("DEBUG: Processing Scene 2...")
             await update_status("🎨 **Scene 2/3: The Clash** (Processing...)")
             
             clash_text = await task_text_clash
@@ -632,6 +834,7 @@ class Battle(commands.Cog):
             await ctx.send(embed=embed2, file=file2)
 
             # --- SCENE 3: THE VICTORY ---
+            print("DEBUG: Processing Scene 3...")
             await update_status("🎨 **Scene 3/3: The Victory** (Processing...)")
             
             victory_text = await task_text_victory
@@ -656,6 +859,7 @@ class Battle(commands.Cog):
             if betting_cog and enable_betting and config.get("betting_enabled", False):
                 winners = betting_cog.engine.resolve(self.current_match_id, winning_team)
                 if winners:
+                    match_stats['winners'] = winners
                     # Sort by profit
                     winners.sort(key=lambda x: x['profit'], reverse=True)
                     
@@ -670,14 +874,14 @@ class Battle(commands.Cog):
                 else:
                     await ctx.send("💸 No winners this round.")
 
-            return winner
+            return winner, match_stats
             
         except Exception as e:
             print(f"AI Generation Critical Error: {e}")
             import traceback
             traceback.print_exc()
             await update_status(f"❌ **Error:** {str(e)}")
-            return
+            return None, {}
 
 async def setup(bot):
     await bot.add_cog(Battle(bot))

@@ -4,6 +4,8 @@ from discord import app_commands
 import json
 import os
 from engine.fighter import Fighter
+from database.db_manager import get_db
+from database.models import Player
 
 # Default Configuration
 DEFAULT_CONFIG = {
@@ -41,6 +43,17 @@ class Admin(commands.Cog):
         return interaction.user.guild_permissions.administrator
 
     # --- Setup & Config ---
+
+    @commands.command(name="admin_sync", description="Sync slash commands with Discord")
+    @commands.has_permissions(administrator=True)
+    async def admin_sync(self, ctx):
+        """Force sync slash commands."""
+        await ctx.send("🔄 Syncing commands...")
+        try:
+            synced = await self.bot.tree.sync()
+            await ctx.send(f"✅ Synced {len(synced)} commands globally.")
+        except Exception as e:
+            await ctx.send(f"❌ Sync failed: {e}")
 
     @commands.hybrid_command(name="admin_setup", description="First-time server configuration")
     @commands.has_permissions(administrator=True)
@@ -147,10 +160,25 @@ class Admin(commands.Cog):
         self.save_config()
         await ctx.send(f"✅ Tournament size set to **{size}** players.")
 
+    @commands.hybrid_command(name="admin_give_token", description="Give tokens to a user (Faucet)")
+    @commands.has_permissions(administrator=True)
+    async def admin_give_token(self, ctx, member: discord.Member, amount: float):
+        if not self.config.get("payout_token"):
+            await ctx.send("❌ No payout token set! Use `/admin_set_token` first.")
+            return
+            
+        betting_cog = self.bot.get_cog("Betting")
+        if not betting_cog:
+            await ctx.send("❌ Betting module not loaded.")
+            return
+            
+        betting_cog.add_balance(member.id, amount)
+        await ctx.send(f"💸 Sent **{amount} {self.config['payout_token']}** to {member.mention}")
+
     @commands.hybrid_command(name="admin_debug_tournament", description="Test tournament flow")
     @commands.has_permissions(administrator=True)
     async def admin_debug_tournament(self, ctx):
-        await ctx.send("🧪 **Debug Tournament**\nSimulating registration of dummy players...")
+        await ctx.send("🧪 **Debug Tournament**\nSimulating registration of 8 Pepe fighters...")
         
         battle_cog = self.bot.get_cog("Battle")
         if not battle_cog:
@@ -162,32 +190,32 @@ class Admin(commands.Cog):
         battle_cog.tournament_mode = 'ROYALE'
         battle_cog.debug_mode = True
         
-        # Add Dummy Players (using ctx.author and bot as stand-ins if needed, or mock objects)
-        # Since we need discord.Member objects, we can try to fetch some members or just use the author multiple times with a hack
-        # But for a true test, we need distinct objects.
-        # Let's just use the author and some random members if available, or mock classes.
-        
+        # Mock Member Class
         class MockMember:
-            def __init__(self, name, user_id, avatar_url):
+            def __init__(self, name, user_id):
                 self.display_name = name
                 self.name = name
                 self.id = user_id
-                self.display_avatar = type('obj', (object,), {'url': avatar_url})
-                self.mention = f"@{name}"
+                self.display_avatar = type('obj', (object,), {'url': "https://i.imgur.com/8nLFCVP.png"}) # Pepe Image
+                self.mention = f"**{name}**"
                 self.status = discord.Status.online
                 self.bot = False
 
-        # Create 4 dummies
-        dummies = [
-            Fighter(MockMember("Cyber_Ninja", 1001, "https://picsum.photos/200")),
-            Fighter(MockMember("Neon_Samurai", 1002, "https://picsum.photos/201")),
-            Fighter(MockMember("Data_Mage", 1003, "https://picsum.photos/202")),
-            Fighter(MockMember("Glitch_Witch", 1004, "https://picsum.photos/203"))
+        # Create 8 Pepe Fighters
+        pepes = [
+            Fighter(MockMember("Pepe A", 1001)),
+            Fighter(MockMember("Pepe B", 1002)),
+            Fighter(MockMember("Pepe C", 1003)),
+            Fighter(MockMember("Pepe D", 1004)),
+            Fighter(MockMember("Pepe E", 1005)),
+            Fighter(MockMember("Pepe F", 1006)),
+            Fighter(MockMember("Pepe G", 1007)),
+            Fighter(MockMember("Pepe H", 1008))
         ]
         
-        battle_cog.queue.extend(dummies)
+        battle_cog.queue.extend(pepes)
         
-        await ctx.send(f"✅ Registered {len(dummies)} dummy fighters.")
+        await ctx.send(f"✅ Registered {len(pepes)} fighters. Starting bracket...")
         await battle_cog.start_tournament(ctx)
         battle_cog.debug_mode = False # Reset after start
 
@@ -220,15 +248,15 @@ class Admin(commands.Cog):
         latency = round(self.bot.latency * 1000)
         await ctx.send(f"💚 **System Healthy**\nLatency: {latency}ms\nDatabase: Connected")
 
-    @commands.hybrid_command(name="admin_reset", description="Soft Reset: Clears tournament state without restarting bot")
+    @commands.hybrid_command(name="admin_reset", description="Soft Reset: Clears tournament state and 1v1 timers")
     @commands.has_permissions(administrator=True)
     async def admin_reset(self, ctx):
-        """Resets the Battle Cog state (Queue, Active Tournament, etc)."""
+        """Resets the Battle Cog state and clears daily 1v1 limits for all players."""
         battle_cog = self.bot.get_cog("Battle")
         if not battle_cog:
             return await ctx.send("❌ Battle module not loaded.")
         
-        # Reset State
+        # Reset Tournament State
         battle_cog.queue = []
         battle_cog.tournament_active = False
         battle_cog.current_match_id = None
@@ -236,7 +264,23 @@ class Admin(commands.Cog):
         battle_cog.team_rosters = {'A': [], 'B': []}
         battle_cog.team_names = {'A': 'Team A', 'B': 'Team B'}
         
-        await ctx.send("🔄 **Tournament State Reset!**\nQueue cleared. Ready for new `/register`.")
+        # Reset 1v1 Timers in DB
+        db_gen = get_db()
+        db = next(db_gen)
+        try:
+            # Set last_1v1_battle_at to NULL for all players
+            db.query(Player).update({Player.last_1v1_battle_at: None})
+            db.commit()
+            db_msg = "✅ Daily 1v1 limits reset for all players."
+        except Exception as e:
+            db_msg = f"⚠️ Failed to reset DB timers: {e}"
+        finally:
+            try:
+                next(db_gen)
+            except StopIteration:
+                pass
+
+        await ctx.send(f"🔄 **System Reset Complete!**\n✅ Tournament Queue cleared.\n{db_msg}")
 
     @commands.hybrid_command(name="admin_restart", description="Hard Restart: Reboots the bot container")
     @commands.has_permissions(administrator=True)

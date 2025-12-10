@@ -1,0 +1,13 @@
+{
+    "tournament_size": 8,
+    "payout_token": "SOL",
+    "secondary_token": null,
+    "treasury_wallet": null,
+    "betting_enabled": false,
+    "betting_min": 0.1,
+    "betting_max": 10.0,
+    "house_edge": 0.05,
+    "theme": "cyberpunk",
+    "nft_collection": "the_growerz",
+    "narrator_style": "Dynamic"
+}

@@ -28,15 +28,23 @@ The project is built on a robust Python backend that orchestrates three distinct
 * **Brain:** Built with `discord.py`, this listens for commands and manages the game state.
 * **Memory:** A SQLite database (managed via SQLAlchemy) tracks every user, wallet, tournament, match, bet, and transaction.
 * **Logic:** The "Fairness Engine" calculates win probabilities based on NFT metadata (Rarity/Rank) and RNG.
+    * **New Mechanics:**
+        * **NFT Exhaustion:** NFTs can only be used once per tournament.
+        * **Pepe Fallback:** If a user runs out of NFTs, they are assigned a "Pepe" character.
+        * **Rock-Paper-Scissors Logic:** NFT > Pepe. Pepe Bro > Pepe Jeet.
+        * **Loot System:** 20% chance to find loot each round, which boosts stats for the next match.
 
 ### Layer 2: The Creative Suite (AI Integration)
 * **The Narrator (NVIDIA Llama 3):** The engine sends fighter data and the current "Theme" to NVIDIA's API. It returns a script: an Intro, Action sequences, and a Winner declaration.
+    * **Custom Styles:** The host can now select the narration style (e.g., "Comedic", "Horror").
 * **The Artist (Supermachine):** 
     * **Infrastructure:** Uses an asynchronous Webhook architecture. The bot sends a request to Supermachine, which processes the image and POSTs the result back to a local `aiohttp` server running on the bot (exposed via `localtunnel`).
     * **Flow:** Images are generated **sequentially** (Scene 1 -> Scene 2 -> Scene 3) to prevent API timeouts and ensure high quality.
+    * **Dynamic Arenas:** The host can select the visual theme for the battle arena.
 
 ### Layer 3: The Blockchain Bridge (Solana)
 * **Gatekeeper:** Checks user wallets to ensure they actually own the NFT they are trying to fight with.
+* **Data Persistence:** Hooks for Supabase (PostgreSQL) and Qdrant (Vector DB) have been added for future long-term storage.
 
 ## 4. Setup & Installation
 

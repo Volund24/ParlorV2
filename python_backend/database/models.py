@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
 from sqlalchemy.orm import declarative_base, relationship
+from datetime import datetime
 
 Base = declarative_base()
 
@@ -11,6 +12,7 @@ class Player(Base):
     balance = Column(Float, default=0.0)
     wins = Column(Integer, default=0)
     losses = Column(Integer, default=0)
+    last_1v1_battle_at = Column(DateTime, nullable=True)
     # Add other stats as needed
 
 class Tournament(Base):

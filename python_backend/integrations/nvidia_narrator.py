@@ -54,26 +54,31 @@ class NvidiaNarrator:
                 print(f"NVIDIA Text Gen Exception: {e}")
                 return "The narrator is having technical difficulties."
 
-    async def generate_meeting(self, fighter_a, fighter_b, theme, gender_a=None, gender_b=None):
-        style = random.choice(STYLES)
+    async def generate_meeting(self, fighter_a, fighter_b, theme, gender_a=None, gender_b=None, style=None):
+        if not style:
+            style = random.choice(STYLES)
         g_a = f" ({gender_a})" if gender_a else ""
         g_b = f" ({gender_b})" if gender_b else ""
         system = f"You are {style}. Describe the moment two fighters spot each other in a {theme}. Max 2 sentences. Suspenseful and visual. Note: {fighter_a} is{g_a}, {fighter_b} is{g_b}."
         user = f"{fighter_a} sees their opponent {fighter_b} across the arena."
         return await self._generate_text(system, user)
 
-    async def generate_clash(self, fighter_a, fighter_b, gender_a=None, gender_b=None):
-        style = random.choice(STYLES)
+    async def generate_clash(self, fighter_a, fighter_b, gender_a=None, gender_b=None, style=None):
+        if not style:
+            style = random.choice(STYLES)
         g_a = f" ({gender_a})" if gender_a else ""
         g_b = f" ({gender_b})" if gender_b else ""
         system = f"You are {style}. Describe the heat of the battle. A story of the clash. Max 2 sentences. High energy. Note: {fighter_a} is{g_a}, {fighter_b} is{g_b}."
         user = f"Describe the intense fight between {fighter_a} and {fighter_b}."
         return await self._generate_text(system, user)
 
-    async def generate_victory(self, winner, loser, winner_gender=None, loser_gender=None):
-        style = random.choice(STYLES)
-        w_g = f" ({winner_gender})" if winner_gender else ""
-        l_g = f" ({loser_gender})" if loser_gender else ""
-        system = f"You are {style}. Describe the aftermath. The winner stands tall while the loser is vanquished. Max 2 sentences. Note: {winner} is{w_g}, {loser} is{l_g}."
-        user = f"Despite a good attempt, {loser} was vanquished and {winner} is victorious."
+    async def generate_victory(self, winner, loser, gender_winner=None, gender_loser=None, style=None):
+        if not style:
+            style = random.choice(STYLES)
+        g_w = f" ({gender_winner})" if gender_winner else ""
+        g_l = f" ({gender_loser})" if gender_loser else ""
+        system = f"You are {style}. Declare the winner of the fight. Max 2 sentences. Epic conclusion. Note: {winner} is{g_w}, {loser} is{g_l}."
+        user = f"{winner} has defeated {loser}."
         return await self._generate_text(system, user)
+
+

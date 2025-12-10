@@ -87,6 +87,13 @@ class Betting(commands.Cog):
     @commands.hybrid_command(name='bet')
     async def bet(self, ctx, amount: float, team: str):
         """Place a bet on the current match. Usage: /bet 10 A (or B)"""
+        
+        # Check if Payout Token is set
+        admin_cog = self.bot.get_cog("Admin")
+        if not admin_cog or not admin_cog.config.get("payout_token"):
+            await ctx.send("❌ Betting is disabled until a Payout Token is configured by admin.")
+            return
+
         # Find active match (simplified: assuming 1 active match per server for now)
         # In reality, we'd need to know which match context we are in.
         # For now, we'll let the Battle Cog manage the "Current Match ID"
@@ -116,13 +123,6 @@ class Betting(commands.Cog):
             await ctx.send(f"✅ {msg}")
         else:
             await ctx.send(f"❌ {msg}")
-
-    # Admin Commands for Testing
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def admin_give_tokens(self, ctx, member: discord.Member, amount: float):
-        self.add_balance(member.id, amount)
-        await ctx.send(f"💸 Added {amount} tokens to {member.display_name}.")
 
 async def setup(bot):
     await bot.add_cog(Betting(bot))

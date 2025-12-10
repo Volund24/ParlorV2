@@ -10,28 +10,70 @@ class Help(commands.Cog):
         embed = discord.Embed(title="📜 The Backroom Parlor - Command Guide", color=discord.Color.gold())
         
         embed.add_field(
-            name="⚔️ Battle & Tournament",
+            name="⚔️ Battle Arena",
             value=(
-                "`/register` - Join the queue for the next tournament.\n"
-                "`/battle` - Start an instant 1v1 battle."
+                "`/battle [opponent]` - Challenge a user to a 1v1 deathmatch. (1 per day)\n"
+                "`/register` - Host or join a Tournament (Royale or Gang War).\n"
+                "`/how_to_play` - Learn the rules of the Parlor."
             ),
             inline=False
         )
         
         embed.add_field(
-            name="💰 Economy & Betting",
+            name="💰 Betting & Economy",
             value=(
-                "`/bet <amount> <player>` - Place a bet on a match.\n"
-                "`/balance` - Check your wallet balance."
+                "`/bet <amount> <player>` - Wager tokens on active matches.\n"
+                "`/balance` - Check your token stash.\n"
+                "`/stats` - View your win/loss record."
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="Use /admin_help for staff commands.")
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name="how_to_play", description="Learn the rules of Battle Royale and Gang Wars")
+    async def how_to_play(self, ctx):
+        embed = discord.Embed(title="📖 How to Play", color=discord.Color.blurple())
+        
+        embed.add_field(
+            name="🥊 1v1 Duels",
+            value=(
+                "Use `/battle` to fight an instant duel.\n"
+                "• You can challenge a specific user or let the bot pick a random opponent.\n"
+                "• **Limit:** You can only fight **once every 24 hours** (unless you are an Admin)."
             ),
             inline=False
         )
         
         embed.add_field(
-            name="ℹ️ Info",
+            name="🏆 Battle Royale",
             value=(
-                "`/help` - Show this message.\n"
-                "`/stats` - View your personal battle record."
+                "Use `/register` to start a tournament.\n"
+                "• **8 Players** enter a bracket.\n"
+                "• Winners advance, losers are eliminated.\n"
+                "• The last fighter standing wins the pot!"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="⚔️ Gang Wars",
+            value=(
+                "Use `/register` and select **Gang Battle**.\n"
+                "• Pick a side (Team A vs Team B).\n"
+                "• Teams fight in a series of 1v1s.\n"
+                "• The team with the most wins takes the glory!"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="💸 Betting",
+            value=(
+                "Spectators can bet on matches using `/bet`.\n"
+                "• Odds are calculated based on fighter stats.\n"
+                "• Winners get paid from the loser's pool!"
             ),
             inline=False
         )
@@ -44,32 +86,30 @@ class Help(commands.Cog):
         embed = discord.Embed(title="🛠️ Admin Command Reference", color=discord.Color.red())
         
         embed.add_field(
-            name="🚀 Setup",
-            value="`/admin_setup`, `/admin_config`",
+            name="🚀 Setup & Reset",
+            value=(
+                "`/admin_setup` - Initialize server config.\n"
+                "`/admin_reset` - **Soft Reset:** Clears queue AND resets everyone's daily 1v1 limit.\n"
+                "`/admin_restart` - **Hard Restart:** Reboots the bot."
+            ),
             inline=False
         )
         
         embed.add_field(
             name="💰 Economy",
-            value="`/admin_set_token`, `/admin_secondary_token`, `/admin_set_wallet`, `/admin_betting`, `/admin_bet_config`",
+            value="`/admin_set_token`, `/admin_give_token`, `/admin_betting`",
             inline=False
         )
         
         embed.add_field(
-            name="🎨 Branding",
-            value="`/admin_set_theme`, `/admin_set_collection`, `/admin_narrator`",
+            name="🎨 Customization",
+            value="`/admin_set_theme`, `/admin_narrator`",
             inline=False
         )
         
         embed.add_field(
-            name="🏆 Tournament",
-            value="`/admin_tournament_size`, `/admin_debug_tournament`",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="📊 Debug",
-            value="`/admin_stats`, `/admin_health`, `/admin_kill`",
+            name="🏆 Tournament Debug",
+            value="`/admin_debug_tournament` - Simulates a full tournament with bots.",
             inline=False
         )
         
